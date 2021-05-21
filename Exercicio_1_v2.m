@@ -14,10 +14,10 @@ Sigma = 1; % (Radar Cross Section)
 Srate = 1e6; % Sample Rate
 PRI = Tp/0.004; % Pulse Repetition Interval for 0,4% Duty Cicle
 Lamb = physconst('lightspeed')/fp; % Wavelength
-numpulses = 1e1; % Number of pulses to simulate
+numpulses = 1e3; % Number of pulses to simulate
 %% Defining Noise Power Based on Desired SNR
 dSNR = [0 5 10 15 20];
-No = pow2db(Pt*Gt*Gr*Lamb^2*Sigma./(((4*pi)^3*R^4*db2pow(L))*db2pow(dSNR)));
+No = Pt*Gt*Gr*Lamb^2*Sigma./(((4*pi)^3*R^4*db2pow(L))*db2pow(dSNR));
 %% Waveform
 hwav = phased.RectangularWaveform('SampleRate',Srate,'PulseWidth',Tp,...
     'PRF',1/PRI,'OutputFormat','Pulses','NumPulses',1);
@@ -55,8 +55,8 @@ hspace = phased.FreeSpace(...
 for k=1:length(No)
     hrec = phased.ReceiverPreamp('Gain',Gr,'NoiseMethod','Noise power',...
         'NoisePower',No(k),'SampleRate',Srate,...
-        'EnableInputPort',true,'SeedSource','Property','Seed',42);
-    % Implementing the Radar Model
+        'EnableInputPort',true);
+    %% Implementing the Radar Model
     T = 1/hwav.PRF; % Time step between pulses
     txpos = htxplat.InitialPosition; % Get antenna position
     if k==1
@@ -87,12 +87,43 @@ for k=1:length(No)
     end
     release(hrec)
     % Noncoherently integrate the received echoes
-    rxsig(:,:,k) = pulsint(rxsig(:,:,k),'noncoherent');
+    %rxsig(:,k) = pulsint(rxsig(:,:,k),'noncoherent');
     t = unigrid(0,1/hrec.SampleRate,T,'[)');
     rangegates = (physconst('LightSpeed')*t)/2;
     figure(k)
-    plot(rangegates,rxsig(:,:,k)); hold on;
+    plot(rangegates,abs(rxsig(:,1,k))); hold on;
     xlabel('Meters'); ylabel('Power');
     ylim = get(gca,'YLim');
     plot([tgtrng,tgtrng],[0 ylim(2)],'r');
+    %% Determining P_d
+    if k ==1
+        x = zeros(length(No),numpulses);
+    end
+    x(k,:) = abs(rxsig(402,:,k));
+    Th = linspace(0.5*sqrt(No(1,k)),4*sqrt(No(1,k)),10);
+    if k==1
+        Pd = zeros(length(No),length(Th));
+    end
+    for r = 1:length(Th)
+        Pd(k,r) = sum(x(k,:)>Th(1,r))/numpulses;
+    end
+    %% Determining P_fa
+    x(k,:) = abs(rxsig(2,:,k));
+    Th = linspace(0.5*sqrt(No(1,k)),4*sqrt(No(1,k)),10);
+    if k==1
+        Pfa = zeros(length(No),length(Th));
+    end
+    for r = 1:length(Th)
+        Pfa(k,r) = sum(x(k,:)>Th(1,r))/numpulses;
+    end
 end
+%% Ploting ROC
+figure(k+1)
+Labels = cell(1,length(No));
+for i = 1:length(No)
+    semilogx(Pfa(i,:),Pd(i,:)), hold on
+    Labels{1,i} = strcat(num2str(dSNR(i)),' SNR');
+end
+title('ROC'), xlabel('P_{fa}'), ylabel('P_d')
+xlim([1e-4 0.5])
+legend(Labels)
