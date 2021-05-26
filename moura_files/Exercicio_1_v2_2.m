@@ -18,7 +18,7 @@ PRI = Tp/0.004; % Pulse Repetition Interval for 0,4% Duty Cicle
 Lamb = c/fp; % Wavelength
 Nofig = 0; % Noise Figure in dB
 % keep memory requirements low
-Npulse = 1e4;
+Npulse = 1e3;
 Npulsebuffsize = 10000;
 % Defining Noise Power Based on Desired SNR
 dSNR = [0 5 10 15 20];
@@ -81,6 +81,7 @@ hmf = phased.MatchedFilter(...
    'GainOutputPort',false);
 % Get group delay of matched filter
 Gd = length(hmf.Coefficients)-1;
+
 %% Implementing the Radar Model
 % Time steps and grid
 Tstp = PRI;
@@ -124,7 +125,7 @@ for k=1:length(No)
         % for unchanging angle to target
         sigcol = step(hcol,sigtgt,tgtang);
         for m = 1:Nbuff
-            parfor n = 1:Npulsebuffsize
+            for n = 1:Npulsebuffsize
                 % Update the Tx position
                 % [txpos,txvel] = step(htxplat,Tstp);
                 % Update the target position
@@ -144,10 +145,10 @@ for k=1:length(No)
                 % Collect the echo from the incident angle at the antenna
                 % sigcol = step(hcol,sigtgt,tgtang);
                 % Receive the echo at the antenna when not transmitting
-                rxsig(:,n) = step(hrec,sigcol,~txstatus);
+                rxsig(:,n) = (step(hrec,sigcol,~txstatus));
             end
             % Apply Matched Filter
-            mfsig = step(hmf,rxsig);
+            mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
             % Shift the matched filter output
             mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
             if r == 1
@@ -157,7 +158,7 @@ for k=1:length(No)
             end
         end
         if (Nrem > 0)
-            parfor n = 1:Nrem
+            for n = 1:Nrem
                 % Update the Tx position
                 % [txpos,txvel] = step(htxplat,Tstp);
                 % Update the target position
@@ -180,7 +181,7 @@ for k=1:length(No)
                 rxsig(:,n) = step(hrec,sigcol,~txstatus);
             end
             % Apply Matched Filter
-            mfsig = step(hmf,rxsig);
+            mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
             % Shift the matched filter output
             mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
             if r == 1
@@ -194,17 +195,18 @@ for k=1:length(No)
             %rxsig(:,k) = pulsint(rxsig(:,:,k),'noncoherent');
             % Plot rangegates power
             figure(k)
-            plot(rangegates,abs(mfsig(:,1))); hold on;
+            plot(rangegates,(mfsig(:,1))); hold on;
             xlabel('Meters'); ylabel('Amplitude');
             title('Matched Signal Amplitude per Distance')
             plot([R,R],[0 max(abs(mfsig(:,1)))],'r--');
         end
     end
+    range_estimates
     %% Create Histogram of Outputs
-    h1a(k,:) = abs(h1(1,:));
-    h0a(k,:) = abs(h0(1,:));
+    h1a(k,:) = (h1(1,:));
+    h0a(k,:) = (h0(1,:));
     thresh_low = min([h1a(k,:), h0a(k,:)]);
-    thresh_hi  = max([h1a(k,:), h0a(k,:)]);
+    thresh_hi  = max([h1a(k,:), h0a(k,:)])^2;
     nbins = 100;
     binedges = linspace(thresh_low,thresh_hi,nbins);
     figure(length(No)+k)
