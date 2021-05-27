@@ -15,14 +15,15 @@ Sigma = 1; % (Radar Cross Section)
 c = physconst('lightspeed');
 fs = 2/Tp; % Sample Rate
 PRI = Tp/0.004; % Pulse Repetition Interval for 0,5 % Duty Cicle
+PRF = 1/PRI;
 Lamb = c/fp; % Wavelength
 Nofig = 0; % Noise Figure in dB
 antenna_rpm = 12; % rpm
 beam_aperture = 3; % degrees
 Npulse = floor( beam_aperture*60/(360*antenna_rpm*PRI) ); 
 % keep memory requirements low
-% Npulse = 10;
-Npulsebuffsize = 10;
+% Npulse = 1000;
+Npulsebuffsize = 100;
 % Defining Noise Power Based on Desired SNR
 dSNR = 20;
 No = Pt.*Gt.*Gr.*Lamb.^2.*Sigma./(((4.*pi).^3.*R.^4.*db2pow(L)).*db2pow(dSNR));
@@ -52,7 +53,7 @@ htgt{1} = phased.RadarTarget('Model','Nonfluctuating',...
     'OperatingFrequency',fp);
 % Target Plataform
 htgtplat{1} = phased.Platform('InitialPosition',[R; 0; 0],...
-    'Velocity',[200;0;0]);
+    'Velocity',[-30;-30;0]);
 % Target Model (noise)
 htgt{2} = phased.RadarTarget('Model','Nonfluctuating',...
     'MeanRCS',0,'PropagationSpeed',c,...
@@ -107,8 +108,13 @@ sigwav = step(hwav);
 % for unchanging radiation angle
 sigrad = step(hrad,sigtx,tgtang);
 % Allocate array for received echoes
-rxsig = zeros( round(fs*Tstp),Npulsebuffsize); 
-mfsig = zeros( round(fs*Tstp),Npulsebuffsize); 
+if Npulsebuffsize <= Npulse
+    rxsig = zeros( round(fs*Tstp),Npulsebuffsize); 
+    mfsig = zeros( round(fs*Tstp),Npulsebuffsize);
+else
+    rxsig = zeros( round(fs*Tstp),Npulse); 
+    mfsig = zeros( round(fs*Tstp),Npulse);
+end
 % Allocate arrays for hypoteses
 h1 = zeros(1,Npulse);
 h0 = zeros(1,Npulse);
@@ -121,67 +127,56 @@ for k=1:length(No)
     release(hrec)
     hrec.ReferenceTemperature = Notemp(k);
     for r = 2:-1:1
-        % for unchanging range to target
-        sigbounce = step(hspace{r},sigrad,txpos,tgtpos,txvel,tgtvel);
-        % for nonfluctuating target
-        sigtgt = step(htgt{r},sigbounce);
-        % for unchanging angle to target
-        sigcol = step(hcol,sigtgt,tgtang);
-        for m = 1:Nbuff
-            for n = 1:Npulsebuffsize
-                % Update the Tx position
-                % [txpos,txvel] = step(htxplat,Tstp);
-                % Update the target position
-                % [tgtpos,tgtvel] = step(htgtplat,Tstp);
-                % Get the range and angle to the target
-                % [tgtrng,tgtang] = rangeangle(tgtpos,txpos);
-                % Generate the pulse
-                % sigwav = step(hwav);
-                % Transmit the pulse. Output transmitter status
-                % [sigtx,txstatus] = step(htx,sigwav);
-                % Radiate the pulse toward the target
-                % sigrad = step(hrad,sigtx,tgtang);
-                % Propagate the pulse to the target and back in free space
-                % sigbounce = step(hspace,sigrad,txpos,tgtpos,txvel,tgtvel);
-                % Reflect the pulse off the target
-                % sigtgt = step(htgt,sigbounce);
-                % Collect the echo from the incident angle at the antenna
-                % sigcol = step(hcol,sigtgt,tgtang);
-                % Receive the echo at the antenna when not transmitting
-                rxsig(:,n) = (step(hrec,sigcol,~txstatus));
-            end
-            % Apply Matched Filter
-%             mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
-            mfsig = step(hmf,rxsig);
-            % Shift the matched filter output
-            mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
-            if r == 1
-                h1(1,(1:Npulsebuffsize) + (m-1)*Npulsebuffsize) = mfsig(rangeidx,:);
-            else
-                h0(1,(1:Npulsebuffsize) + (m-1)*Npulsebuffsize) = mfsig(rangeidx,:);
-            end
-        end
+%         for m = 1:Nbuff
+%             for n = 1:Npulsebuffsize
+%                 % Update the Tx position
+%                 % [txpos,txvel] = step(htxplat,Tstp);
+%                 % Update the target position
+%                 % [tgtpos,tgtvel] = step(htgtplat,Tstp);
+%                 % Get the range and angle to the target
+%                 % [tgtrng,tgtang] = rangeangle(tgtpos,txpos);
+%                 % Generate the pulse
+%                 % sigwav = step(hwav);
+%                 % Transmit the pulse. Output transmitter status
+%                 % [sigtx,txstatus] = step(htx,sigwav);
+%                 % Radiate the pulse toward the target
+%                 % sigrad = step(hrad,sigtx,tgtang);
+%                 % Propagate the pulse to the target and back in free space
+%                 % sigbounce = step(hspace,sigrad,txpos,tgtpos,txvel,tgtvel);
+%                 % Reflect the pulse off the target
+%                 % sigtgt = step(htgt,sigbounce);
+%                 % Collect the echo from the incident angle at the antenna
+%                 % sigcol = step(hcol,sigtgt,tgtang);
+%                 % Receive the echo at the antenna when not transmitting
+%                 rxsig(:,n) = (step(hrec,sigcol,~txstatus));
+%             end
+%             % Apply Matched Filter
+% %             mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
+%             mfsig = step(hmf,rxsig);
+%             % Shift the matched filter output
+%             mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
+%             if r == 1
+%                 h1(1,(1:Npulsebuffsize) + (m-1)*Npulsebuffsize) = mfsig(rangeidx,:);
+%             else
+%                 h0(1,(1:Npulsebuffsize) + (m-1)*Npulsebuffsize) = mfsig(rangeidx,:);
+%             end
+%         end
         if (Nrem > 0)
             for n = 1:Nrem
-                % Update the Tx position
-                % [txpos,txvel] = step(htxplat,Tstp);
-                % Update the target position
-                % [tgtpos,tgtvel] = step(htgtplat,Tstp);
-                % Get the range and angle to the target
-                % [tgtrng,tgtang] = rangeangle(tgtpos,txpos);
-                % Generate the pulse
-                % sigwav = step(hwav);
-                % Transmit the pulse. Output transmitter status
-                % [sigtx,txstatus] = step(htx,sigwav);
-                % Radiate the pulse toward the target
-                % sigrad = step(hrad,sigtx,tgtang);
-                % Propagate the pulse to the target and back in free space
-                % sigbounce = step(hspace,sigrad,txpos,tgtpos,txvel,tgtvel);
-                % Reflect the pulse off the target
-                % sigtgt = step(htgt,sigbounce);
-                % Collect the echo from the incident angle at the antenna
-                % sigcol = step(hcol,sigtgt,tgtang);
-                % Receive the echo at the antenna when not transmitting
+                
+                % Update velocity and position.
+                [tgtpos, tgtvel] = step(htgtplat{r}, PRI);
+                % Range and Angle to Target
+                [tgtrng,tgtang] = rangeangle(tgtpos,...
+                    htxplat.InitialPosition);
+                
+                % range to target
+                sigbounce = step(hspace{r},sigrad,txpos,tgtpos,txvel,tgtvel);
+                % for nonfluctuating target
+                sigtgt = step(htgt{r},sigbounce);
+                % angle to target
+                sigcol = step(hcol,sigtgt,tgtang);
+        
                 rxsig(:,n) = step(hrec,sigcol,~txstatus);
             end
             % Apply Matched Filter
@@ -210,9 +205,17 @@ for k=1:length(No)
     end
     [~, range_estimates_index] = findpeaks( abs(mfsig(:,1)), 'MinPeakHeight', max(abs( mfsig(:,1) ) )*0.8 );
     range_estimates = rangegates(range_estimates_index);
-    
     %% Doppler Estimation
-    
+    max_speed = dop2speed(PRF/2,Lamb)/2;
+    speed_res = 2*max_speed/Npulse;
+    for i=1:numel(range_estimates)
+        [Pxx, Fx] = periodogram((mfsig(range_estimates_index(i),:)).',[],1024,PRF, 'power','centered'); % Calculate power spectrum of rxsig along pulses.
+        speed_vec = dop2speed(Fx,Lamb)/2; % Translate to speed each frequency detected.
+        Pxx_norm = Pxx/max(Pxx); % Normalize Sxx to have its peak at 0 dB.
+        [~,detected_index] = findpeaks(pow2db(Pxx_norm),'MinPeakHeight',-5); % Select peaks whose power is at least 5dB below the max power.
+        speed_target = speed_vec(detected_index)
+    end
+
     
     %% Create Histogram of Outputs
     h1a(k,:) = abs(h1(1,:));
