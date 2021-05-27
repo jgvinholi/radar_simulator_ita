@@ -14,14 +14,17 @@ Sigma = 1; % (Radar Cross Section)
 % Defining Missing Parameters
 c = physconst('lightspeed');
 fs = 2/Tp; % Sample Rate
-PRI = Tp/0.004; % Pulse Repetition Interval for 0,4% Duty Cicle
+PRI = Tp/0.004; % Pulse Repetition Interval for 0,5 % Duty Cicle
 Lamb = c/fp; % Wavelength
 Nofig = 0; % Noise Figure in dB
+antenna_rpm = 12; % rpm
+beam_aperture = 3; % degrees
+Npulse = floor( beam_aperture*60/(360*antenna_rpm*PRI) ); 
 % keep memory requirements low
-Npulse = 1e3;
-Npulsebuffsize = 10000;
+% Npulse = 10;
+Npulsebuffsize = 10;
 % Defining Noise Power Based on Desired SNR
-dSNR = [20];
+dSNR = 20;
 No = Pt.*Gt.*Gr.*Lamb.^2.*Sigma./(((4.*pi).^3.*R.^4.*db2pow(L)).*db2pow(dSNR));
 Notemp = No./(physconst('Boltzmann').*fs.*db2pow(Nofig));
 Notemp = Notemp*sqrt(2);
@@ -49,7 +52,7 @@ htgt{1} = phased.RadarTarget('Model','Nonfluctuating',...
     'OperatingFrequency',fp);
 % Target Plataform
 htgtplat{1} = phased.Platform('InitialPosition',[R; 0; 0],...
-    'Velocity',[30;0;0]);
+    'Velocity',[200;0;0]);
 % Target Model (noise)
 htgt{2} = phased.RadarTarget('Model','Nonfluctuating',...
     'MeanRCS',0,'PropagationSpeed',c,...
@@ -85,7 +88,7 @@ Gd = length(hmf.Coefficients)-1;
 %% Implementing the Radar Model
 % Time steps and grid
 Tstp = PRI;
-Tgrid = unigrid(0,1/fs,Tstp,'[)');
+Tgrid = unigrid(0,1/fs,Tstp, '[)');
 rangegates = c*Tgrid/2;
 % for fix Tx
 txpos = htxplat.InitialPosition;
@@ -104,8 +107,8 @@ sigwav = step(hwav);
 % for unchanging radiation angle
 sigrad = step(hrad,sigtx,tgtang);
 % Allocate array for received echoes
-rxsig = zeros(fs*Tstp,Npulsebuffsize); 
-mfsig = zeros(fs*Tstp,Npulsebuffsize); 
+rxsig = zeros( round(fs*Tstp),Npulsebuffsize); 
+mfsig = zeros( round(fs*Tstp),Npulsebuffsize); 
 % Allocate arrays for hypoteses
 h1 = zeros(1,Npulse);
 h0 = zeros(1,Npulse);
@@ -148,7 +151,8 @@ for k=1:length(No)
                 rxsig(:,n) = (step(hrec,sigcol,~txstatus));
             end
             % Apply Matched Filter
-            mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
+%             mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
+            mfsig = step(hmf,rxsig);
             % Shift the matched filter output
             mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
             if r == 1
@@ -181,7 +185,9 @@ for k=1:length(No)
                 rxsig(:,n) = step(hrec,sigcol,~txstatus);
             end
             % Apply Matched Filter
-            mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig));
+%             mfsig = real(exp(1i*4*pi/Lamb*R)*step(hmf,rxsig)); % coherent
+            mfsig = step(hmf,rxsig);
+
             % Shift the matched filter output
             mfsig=[mfsig(Gd+1:end,:); mfsig(1:Gd,:)];
             if r == 1
@@ -195,20 +201,24 @@ for k=1:length(No)
             %rxsig(:,k) = pulsint(rxsig(:,:,k),'noncoherent');
             % Plot rangegates power
             figure(k)
-            plot(rangegates,( mfsig(:,1)) ); hold on;
+            plot(rangegates, abs( mfsig(:,1)) ); hold on;
 %             plot(rangegates,( pulsint(mfsig(:,1:10),'noncoherent') ) ); hold on;
             xlabel('Meters'); ylabel('Amplitude');
             title('Matched Signal Amplitude per Distance')
             plot([R,R],[0 max(abs(mfsig(:,1)))],'r--');
         end
     end
-    [~, range_estimates_index] = findpeaks(mfsig(:,1), 'MinPeakHeight', max(mfsig(:,1))*0.8 );
+    [~, range_estimates_index] = findpeaks( abs(mfsig(:,1)), 'MinPeakHeight', max(abs( mfsig(:,1) ) )*0.8 );
     range_estimates = rangegates(range_estimates_index);
+    
+    %% Doppler Estimation
+    
+    
     %% Create Histogram of Outputs
-    h1a(k,:) = (h1(1,:));
-    h0a(k,:) = (h0(1,:));
+    h1a(k,:) = abs(h1(1,:));
+    h0a(k,:) = abs(h0(1,:));
     thresh_low = min([h1a(k,:), h0a(k,:)]);
-    thresh_hi  = max([h1a(k,:), h0a(k,:)])^2;
+    thresh_hi  = max([h1a(k,:), h0a(k,:)]);
     nbins = 100;
     binedges = linspace(thresh_low,thresh_hi,nbins);
     figure(length(No)+k)
