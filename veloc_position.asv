@@ -1,0 +1,15 @@
+radobj = RadarSimulator;
+sim_duration = 10; % time in seconds to simulate.
+% result = runSim(radobj, sim_duration);
+% result.pred_range = ;
+result.real_range = vertcat(result.pred_range{:});
+time_vec = linspace(0, sim_duration, length(result.pred_range));
+figure
+hold on
+plot(time_vec, result.pred_range);
+plot(time_vec, result.real_range);
+
+
+function flatten_cell(cell_to_flatten)
+    vertcatcell_to_flatten)
+end
