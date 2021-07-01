@@ -1,0 +1,6 @@
+inc = 3.4
+ic = -2.3
+noic = 9.75
+noinc = 10.75
+irec = 5.6
+ibin = 4.9

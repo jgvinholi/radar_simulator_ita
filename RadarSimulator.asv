@@ -57,13 +57,10 @@ classdef RadarSimulator < handle
         Co
         CFAR_ON = 1;
         CLUTTER_ON = 1;
-        PRED_VEL = 0;
         K0 = 2;
         rwndw = 40;
         gwndw = 10;
         cluttype = 'rayleigh';
-        thresh
-        signal_cfar
     end
     
     properties (SetAccess = private)
@@ -191,8 +188,6 @@ classdef RadarSimulator < handle
         
         function result_struct = runSim(obj, SimDuration)
             pred_range = cell(obj.n_predictions, 1);
-            obj.thresh = cell(obj.n_predictions, 1);
-            obj.signal_cfar = cell(obj.n_predictions, 1);
             pred_speed = pred_range;
             real_range = pred_range;
             real_speed = pred_range;
@@ -203,8 +198,6 @@ classdef RadarSimulator < handle
             obj.n_predictions = ceil( obj.npulse/obj.npulses_per_prediction); % Number of predictions to make, based on the number of pulses to use for each prediction and the number of total pulses to send.
             obj.rxsig = zeros( round(obj.fs*obj.PRI), obj.npulses_per_prediction, obj.n_predictions); 
             for m = 1:obj.n_predictions
-                obj.thresh{m} = zeros(size( obj.rxsig(:,1,1) ));
-                obj.signal_cfar{m} =  zeros(size( obj.rxsig(:,1,1) ));
 %                 if mod(m, 10) == 1
                     clut_real = repmat( obj.clutter_gen( size( obj.rxsig(:,1,1) ) , obj.Co/2, 'rayleigh'), 1, obj.npulses_per_prediction);
                     clut_imag = repmat( obj.clutter_gen( size( obj.rxsig(:,1,1) ) , obj.Co/2, 'rayleigh'), 1, obj.npulses_per_prediction);
@@ -262,11 +255,11 @@ classdef RadarSimulator < handle
                     elseif strcmp( obj.Integrator, 'none')
                         int_sig = abs( mfsig(:, 1) );
                     end
-                    [sigbin, signal_cfar, thresh] = obj.cfar_filter(int_sig, obj.K0, obj.gwndw, obj.rwndw, obj.cluttype);
-                    range_estimates_index = find(sigbin);
+                    [cfar_result, thresh] = obj.cfar_filter(int_sig, obj.K0, obj.gwndw, obj.rwndw, obj.cluttype);
+                    range_estimates_index = find(cfar_result);
+                    
                 end
-                obj.signal_cfar{m} = signal_cfar;
-                obj.thresh{m} = thresh;
+                
 %                 [~, range_estimates_index] = 
 %                 if length(range_estimates_index) > 1
 %                     range_estimates_index = range_estimates_index(1);
@@ -274,20 +267,19 @@ classdef RadarSimulator < handle
                 pred_range{m} = obj.rangegates(range_estimates_index);
                 error_range{m} = ( abs(pred_range{m} - real_range{m}) );
                 %% Doppler Estimation
-                if obj.PRED_VEL
-                    speed_target = {} ;
-                    for i=1:numel(pred_range{m})
-                        [Pxx, Fx] = periodogram((obj.rxsig(range_estimates_index(i),:)).',[],512,obj.PRF, 'power','centered'); % Calculate power spectrum of rxsig along pulses.
-                        speed_vec = dop2speed(Fx,obj.lamb)/2; % Translate to speed each frequency detected.
-                        Pxx_norm = Pxx/max(Pxx); % Normalize Sxx to have its peak at 0 dB.
-    %                     [~,detected_index] = findpeaks(pow2db(Pxx_norm),'MinPeakHeight',-5); % Select peaks whose power is at least 5dB below the max power.
-                        [~,detected_index] = max(pow2db(Pxx_norm) );
-                        prediction_sp = speed_vec(detected_index); % Speed whose sign follows the doppler frequency sign. That is, if the target is getting away from the platform, the sign is negative. 
-                        speed_target{end+1} = -prediction_sp;
-                    end
-                    pred_speed{m} = cell2mat(speed_target); % The minus sign corrects the sign of the prediction.
-                    error_speed{m} = abs(pred_speed{m} - real_speed{m});
+                numel(pred_range{m});
+                speed_target = {} ;
+                for i=1:numel(pred_range{m})
+                    [Pxx, Fx] = periodogram((obj.rxsig(range_estimates_index(i),:)).',[],512,obj.PRF, 'power','centered'); % Calculate power spectrum of rxsig along pulses.
+                    speed_vec = dop2speed(Fx,obj.lamb)/2; % Translate to speed each frequency detected.
+                    Pxx_norm = Pxx/max(Pxx); % Normalize Sxx to have its peak at 0 dB.
+%                     [~,detected_index] = findpeaks(pow2db(Pxx_norm),'MinPeakHeight',-5); % Select peaks whose power is at least 5dB below the max power.
+                    [~,detected_index] = max(pow2db(Pxx_norm) );
+                    prediction_sp = speed_vec(detected_index); % Speed whose sign follows the doppler frequency sign. That is, if the target is getting away from the platform, the sign is negative. 
+                    speed_target{end+1} = -prediction_sp;
                 end
+                pred_speed{m} = cell2mat(speed_target); % The minus sign corrects the sign of the prediction.
+                error_speed{m} = abs(pred_speed{m} - real_speed{m});
             end
 %             mse_range = sqrt( mean( vertcat(error_range{:}).^2 ) );
 %             mse_speed = sqrt( mean( vertcat(error_speed{:}).^2 ) );
@@ -370,7 +362,7 @@ classdef RadarSimulator < handle
                 clut_sig = wblrnd(lamb, k, vec_size(1), vec_size(2));
             end
         end
-        function [sigbin, signal, thresh] = cfar_filter(signal,K0, gwndw, rwndw, type)
+        function [sigbin, thresh] = cfar_filter(signal,K0, gwndw, rwndw, type)
             % K0 -> CFAR threshold constant.
             % gwndw -> size of guard window. 
             % rwndw -> size of reference window.
